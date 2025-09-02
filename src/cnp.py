@@ -10,7 +10,9 @@ pyinstaller --onefile --windowed --icon=cnp.ico --exclude-module PySide6 --exclu
 
 import sys, os, re
 from functools import partial
-import sqlite3
+import sqlite3, shutil
+from datetime import datetime
+from pathlib import Path
 
 from PyQt5.QtWidgets import (
      QApplication    , QWidget          , QLabel        , QLineEdit, 
@@ -19,9 +21,10 @@ from PyQt5.QtWidgets import (
      QDialog         , QFormLayout      , QGroupBox     , QGridLayout, 
      QStyleFactory   , QTabWidget       , QTableWidget  , QTableWidgetItem, 
      QCheckBox       , QCalendarWidget  , QPlainTextEdit, QTableWidget, 
-     QTableWidgetItem, QAbstractItemView, QListWidget   , QDialogButtonBox
+     QTableWidgetItem, QAbstractItemView, QListWidget   , QDialogButtonBox,
+     QFrame          , QSizeGrip
 )
-from PyQt5.QtCore import Qt, QDate, QSize, QObject, pyqtSignal
+from PyQt5.QtCore import Qt, QDate, QSize, QObject, pyqtSignal, QPoint
 from PyQt5.QtGui import QPixmap, QIcon, QFont
 
 import icon_arrow_left  , icon_arrow_right , icon_folder_open, \
@@ -33,10 +36,11 @@ import icon_arrow_left  , icon_arrow_right , icon_folder_open, \
        icon_num_black_02, icon_num_black_03, icon_num_black_04, \
        icon_num_blue_02 , icon_num_blue_03 , icon_num_blue_04, \
        icon_pdf         , icon_trash_03    , icon_system, \
-       icon_note        , icon_id
+       icon_note        , icon_id          , icon_logout, \
+       icon_clear       , icon_arrow_LR
 
 import cnpdb, cidman, msg, cnpval, clistdlg, cnppdf, cnpconf, \
-       cnpword, cnpexcel, cnputil
+       cnpword, cnpexcel, cnputil, cnpconf, cnpdrag, cnpcomb
        
 
 class CustomizeTableDlg(QDialog):
@@ -340,8 +344,17 @@ class ClientCoordinator(QObject):
     def close(self):
         self.db.close()
         
+    def clear(self):
+        self.clients = []
+        self.cur_client_index = 0
+        
+    def remove_all(self):
+        deleted_clients = self.db.remove_all()
+        self.clear()
+        return deleted_clients
+        
     def get_clients(self):
-        self.clients
+        return self.clients
         
     def current_client(self):
         if self.clients == []:
@@ -355,21 +368,20 @@ class ClientCoordinator(QObject):
         try:
             self.db.add_client(client)
         except Exception as e:
-            self.print_message.emit(f"... Error (ClientCoordinator::add_client) : {str(e)}")
+            self.print_message.emit(f"... Error (ClientCoordinator::add_client) : {e}")
             return 
         self.cur_client_index += 1
         
     def update_client(self, client):
-        try:
-            self.db.update_client(client)
-        except Exception as e:
-            self.print_message.emit(f"... Error (ClientCoordinator::update_client) : {str(e)}")
+        c_ = client.copy()
+        self.db.update_client(client)
+        self.clients[self.cur_client_index] = c_
         
     def delete_client(self, id_):
         try:
             self.db.delete_client(id_)
         except Exception as e:
-            self.print_message.emit(f"... Error (ClientCoordinator::delete_client) : {str(e)}")
+            self.print_message.emit(f"... Error (ClientCoordinator::delete_client) : {e}")
             return 
         self.cim.remove(id_)
         
@@ -383,7 +395,10 @@ class ClientCoordinator(QObject):
         if self.cur_client_index < 0: 
             self.cur_client_index = 0
         elif self.cur_client_index > c_len:
-            self.cur_client = c_len-1
+            self.cur_client_index = c_len-1
+        
+    def end_client(self):
+        self.cur_client_index = len(self.clients)-1
         
     def next_client(self):
         nc = len(self.clients)
@@ -408,9 +423,15 @@ class MainWindow(QWidget):
         
         layout = QVBoxLayout()
         self.tabs = QTabWidget()
+        self.tabs.addTab(self.message_tab(), "Message")
+        cnpconf.load_config(self.global_message)
+
         self.tabs.addTab(self.build_entry_tab(), "Add/Edit Client")
         self.tabs.addTab(self.build_view_tab(), "View/Search Clients")
-        self.tabs.addTab(self.message_tab(), "Message")
+        #self.tabs.addTab(self.config_tab(), "Config")
+        
+        self.tabs.tabBar().moveTab(0,2)
+        self.tabs.setCurrentIndex(0)
         layout.addWidget(self.tabs)
         self.setLayout(layout)   
 
@@ -422,7 +443,11 @@ class MainWindow(QWidget):
             msg.message_box("... Error : invalid db. See messages.", msg.message_error)
         else:
             self.db_man.load()
+            
         self.setWindowIcon(QIcon(QPixmap(icon_system.table)))
+        
+    def config_tab(self):
+        pass
         
     def closeEvent(self, event):
         ret = msg.message_box("Are you sure you want to quit?", msg.message_yesno)
@@ -433,7 +458,7 @@ class MainWindow(QWidget):
             event.ignore()
             
     def show_current_client(self, selected_client=None):
-        
+        #self.global_message.appendPlainText("... show_current_client")
         if selected_client is None:
             client = self.db_man.current_client()
         else:
@@ -442,10 +467,24 @@ class MainWindow(QWidget):
         if client is None:
             msg.message_box("... Error : DB error. See messages.", msg.message_error)
             return
+        
+        pic_path = client[cnpdb.col_pic_path]
+        
+        if pic_path is not None and Path(pic_path).exists() == True:
+            self.file_path.setText(pic_path)
+            pixmap = QPixmap(pic_path).scaled(200, 200, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            self.picture_label.setPixmap(pixmap)
             
         client_id = client[cnpdb.col_id]
         self.name_box.setTitle(f"Names: ID({client_id})")
-        self.file_path     .setText(client[cnpdb.col_pic_path       ])   
+        
+        pic_path = cnputil.safe_val(client[cnpdb.col_pic_path])
+        self.file_path.setText(pic_path)  
+
+        if pic_path != "" and Path(pic_path).exists() == True:
+            pixmap = QPixmap(pic_path).scaled(200, 200, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            self.picture_label.setPixmap(pixmap)
+        
         self.first_name_kr .setText(client[cnpdb.col_first_name_kor ])   
         self.last_name_kr  .setText(client[cnpdb.col_last_name_kor  ])   
         self.first_name_en .setText(client[cnpdb.col_first_name_eng ])   
@@ -512,27 +551,17 @@ class MainWindow(QWidget):
         self.global_message.clear()
         
     def build_view_tab(self):
+        self.global_message.appendPlainText("... Build View Tab")
         widget = QWidget()
         layout = QGridLayout()
         self.view_list = None
         self.all_columns = [c for c in cnpdb.view_table_head_label]
-        self.visible_columns = [
-            #cnpdb.view_table_head_label[cnpdb.id_index],
-            cnpdb.view_table_head_label[cnpdb.last_name_kor_index],
-            cnpdb.view_table_head_label[cnpdb.first_name_kor_index],
-            cnpdb.view_table_head_label[cnpdb.last_name_eng_index],
-            cnpdb.view_table_head_label[cnpdb.first_name_eng_index],
-            cnpdb.view_table_head_label[cnpdb.room_number_index],
-            cnpdb.view_table_head_label[cnpdb.initial_assessment_index],
-            cnpdb.view_table_head_label[cnpdb.assessment_14th_index],
-            cnpdb.view_table_head_label[cnpdb.assessment_90th_index],
-            cnpdb.view_table_head_label[cnpdb.change_assessment_index],
-            cnpdb.view_table_head_label[cnpdb.change_assessment_done_index]
-        ]
+        self.visible_columns = cnpconf.get_visible_columns()
         
         self.view_all = QPushButton()
         self.view_all.setIcon(QIcon(QPixmap(icon_fetch_all.table)))
         self.view_all.setIconSize(QSize(32,32))
+        self.view_all.setToolTip('Load all clients from database')
         self.view_all.clicked.connect(self.view_all_client)
         layout.addWidget(self.view_all, 0, 0)
 
@@ -540,58 +569,83 @@ class MainWindow(QWidget):
         self.view_search.setIcon(QIcon(QPixmap(icon_find.table)))
         self.view_search.setIconSize(QSize(32,32))
         self.view_search.clicked.connect(self.view_search_client)
+        self.view_search.setToolTip('Search clients')
         layout.addWidget(self.view_search, 0, 1)
 
         self.view_save_pdf = QPushButton()
         self.view_save_pdf.setIcon(QIcon(QPixmap(icon_pdf.table)))
         self.view_save_pdf.setIconSize(QSize(32,32))
         self.view_save_pdf.clicked.connect(self.view_saveas_pdf)
+        self.view_save_pdf.setToolTip('Save the current list as PDF')
         layout.addWidget(self.view_save_pdf, 0, 2)
 
         self.view_save_excel = QPushButton()
         self.view_save_excel.setIcon(QIcon(QPixmap(icon_excel.table)))
         self.view_save_excel.setIconSize(QSize(32,32))
         self.view_save_excel.clicked.connect(self.view_saveas_excel)
+        self.view_save_excel.setToolTip('Save the current list as Excel')
         layout.addWidget(self.view_save_excel, 0, 3)
 
-       
+        self.view_delete_btn = QPushButton()
+        self.view_delete_btn.setIcon(QIcon(QPixmap(icon_delete.table)))
+        self.view_delete_btn.setIconSize(QSize(32,32))
+        self.view_delete_btn.clicked.connect(self.view_delete)
+        self.view_delete_btn.setToolTip('Delete selected client from the list')
+        layout.addWidget(self.view_delete_btn, 0, 4)
+        
         self.view_clear = QPushButton()
         self.view_clear.setIcon(QIcon(QPixmap(icon_trash.table)))
         self.view_clear.setIconSize(QSize(32,32))
         self.view_clear.clicked.connect(self.view_clear_table)
-        layout.addWidget(self.view_clear, 0, 4)
+        self.view_clear.setToolTip('Delete list')
+        layout.addWidget(self.view_clear, 0, 5)
  
         self.view_setting = QPushButton()
         self.view_setting.setIcon(QIcon(QPixmap(icon_view_setting.table)))
         self.view_setting.setIconSize(QSize(32,32))
         self.view_setting.clicked.connect(self.change_view_setting)
-        layout.addWidget(self.view_setting, 0, 5)
+        layout.addWidget(self.view_setting, 0, 6)
 
         self.view_table = QTableWidget()
         self.view_table.setColumnCount(len(self.visible_columns))
         self.view_table.setHorizontalHeaderLabels(self.visible_columns)
+        self.view_table.setSortingEnabled(True)
         self.update_view_table()
-        layout.addWidget(self.view_table, 1,0,1,6)
+        layout.addWidget(self.view_table, 1,0,1,7)
         widget.setLayout(layout)
         return widget
+
+    def view_delete(self):
+        # Get the index of the currently selected row
+        selected_row_index = self.view_table.currentRow()
+
+        # Check if a row is actually selected (index will be -1 if none is)
+        if selected_row_index >= 0:
+            self.view_table.removeRow(selected_row_index)
 
     def view_clear_table(self):
         self.view_table.setRowCount(0)
         
     def view_search_client(self):
+        self.global_message.appendPlainText("... view_search_client")
         fdlg = FindDialog(self.db_man.db, True)
         ret = fdlg.exec_()
-        clients = fdlg.get_clients()
-        if clients is None or clients == []:
-            return
-        else:
-            self.view_list = clients
-            self.update_view_table()
+        if ret == 1:
+            clients = fdlg.get_clients()
+            if clients is None or clients == []:
+                msg.message_box("No client exist!", msg.message_warning)
+                return
+            else:
+                self.view_list = clients
+                self.update_view_table()
         
     def view_saveas_excel(self):
+        
         if self.view_list is None or self.view_list == []:
             msg.message_box("No client to export", msg.message_warning)
             return
+            
+        self.global_message.appendPlainText("... view_saveas_excel")
             
         try:
             cnpexcel.export_clients_to_excel(
@@ -600,7 +654,7 @@ class MainWindow(QWidget):
                     cnpconf.export_excel_fname,
                     cnpconf.export_title)
         except Exception as e:
-            msg.message_box("Error: %s"%str(e))
+            msg.message_box("Error: %s"%e)
             return
             
         msg.message_box(f"{len(self.view_list)} clients saved to {cnpconf.export_excel_fname}")
@@ -609,6 +663,8 @@ class MainWindow(QWidget):
         if self.view_list is None or self.view_list == []:
             msg.message_box("No client to export", msg.message_warning)
             return
+
+        self.global_message.appendPlainText("... view_saveas_pdf")
             
         try:
             cnppdf.export_clients_to_pdf(
@@ -618,7 +674,7 @@ class MainWindow(QWidget):
                     cnpconf.export_pdf_landscape,
                     cnpconf.export_title)
         except Exception as e:
-            msg.message_box("Error: %s"%str(e))
+            msg.message_box("Error: %s"%e)
             return
             
         msg.message_box(f"{len(self.view_list)} clients saved to {cnpconf.export_pdf_fname}")
@@ -627,6 +683,7 @@ class MainWindow(QWidget):
         self.show_customize_dialog()
         
     def update_view_table(self):
+        #self.global_message.appendPlainText("... update_view_table")
         # Clear the old table
         self.view_table.clear()
         
@@ -654,29 +711,65 @@ class MainWindow(QWidget):
         
         # Show the dialog and get the result
         if dialog.exec_() == QDialog.Accepted:
-            self.visible_columns = dialog.get_selected_columns()
+            new_visible_columns = dialog.get_selected_columns()
+            update_visible_column = False
+            v1_ = self.visible_columns
+            v2_ = new_visible_columns
+            
+            if len(v1_) <= len(v2_):
+                v1_, v2_ = v2_, v1_
+            
+            for v_ in v1_:
+                if v_ in v2_:
+                    continue
+                else:
+                    update_visible_column = True
+                    break
+                    
+            self.visible_columns = new_visible_columns      
             self.update_view_table()
+
+            if update_visible_column:
+                cnpconf.update_visible_column(new_visible_columns, self.global_message)
+                cnpconf.save_config(self.global_message)
    
     def view_all_client(self):
-        self.view_list = self.db_man.db.load_all_clients()
+        self.global_message.appendPlainText("... view_all_client")
+        # create SQLite keys for search
+        v_key = [f"{cnpdb.available_view_column_key(v_)}" for v_ in self.visible_columns]
+        
+        #self.view_list = self.db_man.db.load_all_clients()
+        try:
+            self.view_list = self.db_man.db.custom_query(v_key)
+        except Exception as e:
+            e_msg = f"... Error: clients from database\n{e}"
+            msg.message_box(e_msg)
+            self.global_message.appendPlainText(e_msg)
+            return
+        
         if self.view_list == []: 
             return
             
         self.update_view_table()
         
+    def set_picture_path(self, p):
+        self.file_path.setText(p)
+        
     def build_entry_tab(self):
         widget = QWidget()
-        
+        self.global_message.appendPlainText("... Build Entry Tab")
         main_layout = QHBoxLayout()
         #main_layout = QGridLayout()
 
         # --- LEFT PANEL (PICTURE AREA) ---
         left_panel = QVBoxLayout()
-        self.picture_label = QLabel("Drag and drop a picture here")
+        
+        self.picture_label = cnpdrag.DraggablePictureLabel() #QLabel("Drag and drop a picture here")
         self.picture_label.setAlignment(Qt.AlignCenter)
         self.picture_label.setStyleSheet("border: 2px dashed #aaa;")
         self.picture_label.setFixedSize(200, 200)
         self.picture_label.setAlignment(Qt.AlignCenter)
+        self.picture_label.set_picture_path.connect(self.set_picture_path)
 
         pic_box = QGroupBox("Picture")
         pic_box.setAlignment(Qt.AlignCenter)
@@ -702,23 +795,45 @@ class MainWindow(QWidget):
         db_box.setAlignment(Qt.AlignCenter)
         db_layout = QGridLayout()
         self.db_open = QPushButton()
-        self.db_open.setIcon(QIcon(QPixmap(icon_document.table)))
+        self.db_open.setIcon(QIcon(QPixmap(icon_folder_open.table)))
         self.db_open.setIconSize(QSize(32,32))
+        self.db_open.setToolTip('Open client database\nNot implemented')
+        
+        self.db_save = QPushButton()
+        self.db_save.setIcon(QIcon(QPixmap(icon_save.table)))
+        self.db_save.setIconSize(QSize(32,32))
+        self.db_save.setToolTip('Save As client database\nNot implemented')
+        
+        self.db_close = QPushButton()
+        self.db_close.setIcon(QIcon(QPixmap(icon_logout.table)))
+        self.db_close.setIconSize(QSize(32,32))
+        self.db_close.setToolTip('Close client database\nNot implemented')
         
         self.db_export_word = QPushButton()
         self.db_export_word.setIcon(QIcon(QPixmap(icon_word.table)))
         self.db_export_word.setIconSize(QSize(32,32))
         self.db_export_word.clicked.connect(self.save_current_client_word)
-        
+        self.db_export_word.setToolTip('Export current client as Word file')
+
         self.db_export_excel = QPushButton()
         self.db_export_excel.setIcon(QIcon(QPixmap(icon_excel.table)))
         self.db_export_excel.setIconSize(QSize(32,32))
         self.db_export_excel.clicked.connect(self.save_current_client_excel)
+        self.db_export_excel.setToolTip('Export current client as Excel file')
+
+        self.db_arrow_btn = QPushButton()
+        self.db_arrow_btn.setIcon(QIcon(QPixmap(icon_arrow_LR.table)))
+        self.db_arrow_btn.setIconSize(QSize(32,32))
+        self.db_arrow_btn.clicked.connect(self.enable_arrow_bottoms)
+        self.db_arrow_btn.setToolTip('Enable prev/next arrow')
         
-        self.db_save = QPushButton()
-        self.db_save.setIcon(QIcon(QPixmap(icon_save.table)))
-        self.db_save.setIconSize(QSize(32,32))
-        
+                        
+        self.db_delete_all_btn = QPushButton()
+        self.db_delete_all_btn.setIcon(QIcon(QPixmap(icon_clear.table)))
+        self.db_delete_all_btn.setIconSize(QSize(32,32))
+        self.db_delete_all_btn.clicked.connect(self.delete_all_clients)
+        self.db_delete_all_btn.setToolTip("Delete All Clients")
+
         self.db_search_house = QPushButton()
         self.db_search_house.setIcon(QIcon(QPixmap(icon_find.table)))
         self.db_search_house.setIconSize(QSize(32,32))
@@ -728,13 +843,17 @@ class MainWindow(QWidget):
         self.db_fetch_all.setIcon(QIcon(QPixmap(icon_fetch_all.table)))
         self.db_fetch_all.setIconSize(QSize(32,32))
         self.db_fetch_all.clicked.connect(self.load_all_clients)
+        self.db_fetch_all.setToolTip('Load all clients')
         
         db_layout.addWidget(self.db_open, 0,0)
-        db_layout.addWidget(self.db_export_word, 0,1)
-        db_layout.addWidget(self.db_export_excel, 0,2)
-        db_layout.addWidget(self.db_save, 1,0)
+        db_layout.addWidget(self.db_save, 0,1)
+        db_layout.addWidget(self.db_close, 0,2)
+        db_layout.addWidget(self.db_export_word, 1,0)
+        db_layout.addWidget(self.db_export_excel, 1,1)
+        db_layout.addWidget(self.db_arrow_btn, 1,2)
         db_layout.addWidget(self.db_fetch_all, 2,0)
-        db_layout.addWidget(self.db_search_house, 2,1)
+        db_layout.addWidget(self.db_delete_all_btn, 2,1)
+        db_layout.addWidget(self.db_search_house, 2,2)
         db_box.setLayout(db_layout)
         left_panel.addWidget(db_box)
         
@@ -886,11 +1005,13 @@ class MainWindow(QWidget):
         self.add_button.setIcon(QIcon(QPixmap(icon_save_01.table)))
         self.add_button.setIconSize(QSize(32,32))
         self.add_button.clicked.connect(self.save_client)
+        self.add_button.setToolTip("(1) Save a new client\n(2) Updae current client")
         
         self.new_button = QPushButton("")
         self.new_button.setIcon(QIcon(QPixmap(icon_add.table)))
         self.new_button.setIconSize(QSize(32,32))
         self.new_button.clicked.connect(self.new_client)
+        self.new_button.setToolTip("(1) Clear entry\n(2) Add a new client")
         
         self.update_button = QPushButton("")
         self.update_button.setIcon(QIcon(QPixmap(icon_update.table)))
@@ -901,6 +1022,7 @@ class MainWindow(QWidget):
         self.remove_button.setIcon(QIcon(QPixmap(icon_delete.table)))
         self.remove_button.setIconSize(QSize(32,32))
         self.remove_button.clicked.connect(self.remove_client)
+        self.remove_button.setToolTip("Delete current client")
         
         self.prev_button = QPushButton("")
         self.prev_button.setIcon(QIcon(QPixmap(icon_arrow_left.table)))
@@ -934,21 +1056,43 @@ class MainWindow(QWidget):
         #self.find_button.clicked.connect(self.find_client)
         #self.delete_button2.clicked.connect(self.delete_client)
     
+    def enable_arrow_bottoms(self):
+        self.direction_button(True)
+        
+    def delete_all_clients(self):
+    
+        res = msg.message_box("Do you want to removel all clients?", msg.message_yesno)
+        if res == QMessageBox.No: return         
+    
+        try:
+            deleted_clients = self.db_man.db.remove_all()
+        except Exception as e:
+            msg.message_box(f"{e}", msg.message_warning)
+            
+        msg.message_box(f"{deleted_clients} clients deleted!")
+        self.db_man.clear()
+        self.clear_entry()
+            
     def save_current_client_(self, word=True):
+        self.global_message.appendPlainText("... save_current_client: %s"%"WORD" \
+        if word else "EXCEL")
+        
         if self.get_client_id() is None:
-            msg.message_box("No client data found!!", msg.message_warning)
+            msg.message_box("No client ID found!!", msg.message_warning)
             return
+            
         f_ = cnpconf.save_word_fname_cur_client if word \
              else cnpconf.save_excel_fname_cur_client
         c_ = self.db_man.current_client()
+        
         try:
             if word:
                 cnpword.save_client_to_word(c_, f_)
             else:
                 cnpexcel.save_client_to_excel(c_, f_)
         except Exception as e:
-            msg.message_box(f"Error: {str(e)}", msg.message_error)
-            self.global_message.appendPlainText(f"... Error: save {f_} => {str(e)}")
+            self.global_message.appendPlainText(f"... Error: save {f_} => {e}")
+            msg.message_box(f"Error: {e}", msg.message_error)
             return
         msg.message_box(f"Save current client : {f_}")
     
@@ -957,15 +1101,50 @@ class MainWindow(QWidget):
         
     def save_current_client_word(self):
         self.save_current_client_(True)
+
+    def set_selected_room(self, selected_item):
+        self.selected_client_room = selected_item
+        if self.selected_client_room is None:
+            return
+        clients = self.db_man.get_clients()
+        
+        if clients is None:
+            msg.message_box("No clients!\nLoad clients!!")
+            return
+            
+        for c_ in clients:
+            if c_[cnpdb.col_room_number] == self.selected_client_room:
+                self.clear_entry()
+                self.show_current_client(c_)
+                break
+        self.direction_button(False)
+
+    def choose_room_floor(self, button, floor):
+        self.selected_client_room = None
+        client = self.db_man.db.search_by_rooms(floor)
+        if client == []:
+            msg.message_box(f"No client on {floor[0:1]} floor", msg.message_warning)
+            return False
+            
+        room = [r_[cnpdb.col_room_number] for r_ in client]
+        
+        popup = cnpcomb.PopupCombo(self, room)
+        popup.set_current_item.connect(self.set_selected_room)
+        # place the popup just right beside the button
+        btn_pos = button.mapToGlobal(QPoint(button.width(), 0))
+        popup.move(btn_pos)
+        #popup.show()
+        popup.combo.showPopup()
+        popup.combo.setFocus()
         
     def choose_room_floor_02(self):
-        pass
-        
+        self.choose_room_floor(self.floor_2_button, "2%")
+
     def choose_room_floor_03(self):
-        pass
+        self.choose_room_floor(self.floor_3_button, "3%")
         
     def choose_room_floor_04(self):
-        pass
+        self.choose_room_floor(self.floor_4_button, "4%")
     
     def find_client(self):
         self.direction_button(False)
@@ -980,15 +1159,25 @@ class MainWindow(QWidget):
             self.show_current_client(c_)
     
     def load_all_clients(self):
+        #self.global_message.appendPlainText(f"... load_all_clients")
         self.fetch_all_clients()
         self.show_current_client()
         
     def fetch_all_clients(self):
+        #self.global_message.appendPlainText(f"... fetch_all_clients")
         self.clear_entry()
-        self.db_man.load()
+        
+        try:
+            self.db_man.load()
+        except Exception as e:
+            e_msg = f"... Error: {e}"
+            self.global_message.appendPlainText(e_msg)
+            msg.message_box(e_msg)
+            
         self.direction_button(True)
         
     def choose_room_number(self):
+        self.global_message.appendPlainText("... choose_room_number")
         rdlg = QChooseRoomNumberDlg(self.db_man.db)
         ret = rdlg.exec_()
         if ret == 1:
@@ -999,7 +1188,9 @@ class MainWindow(QWidget):
                 msg.message_box("Error : duplicate room numbers. See messages.", msg.message_error)
             
     def clear_entry(self):
-        
+        #self.global_message.appendPlainText("... clear_entry")
+        self.delete_picture()
+        self.picture_label.setText("Drag and drop a picture here\n(or use 'Browse')")
         self.name_box.setTitle("Name: ")
         self.file_path     .setText("")   
         self.first_name_kr .setText("")   
@@ -1027,6 +1218,7 @@ class MainWindow(QWidget):
         return self.new_client_data(False)
         
     def new_client_data(self, new=True):
+        #self.global_message.appendPlainText("... new_client_data")
         date_string = self.dob.date().toString(cnpval.date_format_r)
         s_ = self.change_assessment_check.isChecked()
         x_ = self.sex_initial()
@@ -1038,7 +1230,7 @@ class MainWindow(QWidget):
             if i_ is None:
                 msg.message_box("Error: invalid client data(No ID)")
                 return None
-            
+
         client = {
             cnpdb.col_id                    : i_,
             cnpdb.col_pic_path              : self.file_path     .text() or None,
@@ -1058,10 +1250,11 @@ class MainWindow(QWidget):
                                               cnpdb.change_assessment_no,
             cnpdb.col_comments              : self.comments.toPlainText() or None
         }
-
+        
         return client
         
     def new_client(self):
+        #self.global_message.appendPlainText("... new_client(add)")
         self.clear_entry()
         
     def direction_button(self, enabled=False):
@@ -1069,6 +1262,8 @@ class MainWindow(QWidget):
         self.prev_button.setEnabled(enabled)
         
     def save_client(self):
+        self.global_message.appendPlainText("... save_client")
+
         if not (self.first_name_kr.text() or self.first_name_en.text()):
             QMessageBox.warning(self, "Validation Error", 
             "At least one name (Korean or English) is required.")
@@ -1083,15 +1278,20 @@ class MainWindow(QWidget):
         
         if i_ is None:
             c_ = self.new_client_data()
-        
             self.global_message.appendPlainText(f"... Add client: {c_[cnpdb.col_id]}")
             try:
                 self.db_man.add_client(c_)
             except Exception as e:
-                msg.message_box("Warning: %s"%str(e), msg.message_warning)
+                e_msg = f"Warning: {e}"
+                self.global_message.appendPlainText(e_msg)
+                msg.message_box(e_msg, msg.message_warning)
                 self.db_man.cim.discard(c_[cnpdb.col_id])
                 return
+                
             self.name_box.setTitle(f"Name: ID({c_[cnpdb.col_id]})")
+            self.fetch_all_clients()
+            self.db_man.end_client()
+            self.show_current_client()
         else:
             if self.db_man.db.check_client_id_exists(i_):
                 res = msg.message_box("Do you want to save?", msg.message_yesno)
@@ -1099,15 +1299,14 @@ class MainWindow(QWidget):
                 try:
                     self.db_man.update_client(self.client_data())
                 except Exception as e:
-                    msg.message_box("Error: can't save client data", msg.message_error)
+                    e_msg = f"Error: can't save client data. {e}"
+                    self.global_message.appendPlainText(e_msg)
+                    msg.message_box(e_msg, msg.message_error)
                     return
-        prv_client_index = self.db_man.cur_client_index
-        self.fetch_all_clients()
-        self.db_man.calculate_client_index(prv_client_index)
-        self.show_current_client()
-        
+                
     def remove_client(self):
-    
+        self.global_message.appendPlainText("... remove_client")
+        
         i_ = self.get_client_id()
         
         if i_ is None: return
@@ -1119,20 +1318,39 @@ class MainWindow(QWidget):
             try:
                 self.db_man.delete_client(i_)
             except Exception as e:
-                msg.message_box(str(e), msg.message_warning)
+                e_msg = f"... Error: {e}"
+                self.global_message.appendPlainText(e_msg)
+                msg.message_box(e_msg, msg.message_warning)
                 return
-            self.clear_entry()
-            self.direction_button(False)
-            self.global_message.appendPlainText("... Delete ID(%s) success"%i_)
+            #self.clear_entry()
+            #self.direction_button(False)
+            prv_client_index = self.db_man.cur_client_index
+            self.fetch_all_clients()
+            self.db_man.calculate_client_index(prv_client_index)
+            self.show_current_client()
+            
+            e_msg=f"... Delete ID({i_}) success"
+            self.global_message.appendPlainText(e_msg)
+            msg.message_box(e_msg)
         
     def update_client(self):
+        self.global_message.appendPlainText("... update_client")
         i_ = self.get_client_id()
         if i_ is None:
-            msg.message_box("Error: No ID exist. If this is a new client, click SAVE", msg.message_warning)
+            e_msg = "... Error: No ID exist. If this is a new client, click SAVE"
+            self.global_message.appendPlainText(e_msg)
+            msg.message_box(e_msg, msg.message_warning)
             return
-        self.db_man.update_client(self.client_data())
+            
+        try:
+            self.db_man.update_client(self.client_data())
+        except Exception as e:
+            e_msg = f"... Error: {e}"
+            self.global_message.appendPlainText(e_msg)
+            msg.message_box(e_msg, msg.message_warning)
         
     def get_client_id(self):
+        #self.global_message.appendPlainText("... get_client_id")
         m_ = re.search(cnpval.id_f, self.name_box.title())
         if m_: 
             return m_.group(1)
@@ -1140,9 +1358,10 @@ class MainWindow(QWidget):
             return None
         
     def delete_client(self):
+        self.global_message.appendPlainText("... delete_client")
         id_ = self.get_client_id()
         if id_ is None:
-            msg.message_box("Error: No ID exist", msg.message_warning)
+            msg.message_box("... Error: No ID exist", msg.message_warning)
             return
             
         ret = msg.message_box("Do you want to delete?", msg.yesno)
@@ -1154,23 +1373,34 @@ class MainWindow(QWidget):
         except Exception as e:
             msg.message_box(f"Error: {e}")
             return 
+        e_msg = f"Deletion complete(ID: {id_}"
+        self.global_message.appendPlainText(e_msg)
             
         self.clear_entry()
         prv_client_index = self.db_man.cur_client_index
         self.fetch_all_clients()
         self.db_man.calculate_client_index(prv_client_index)
         self.show_current_client()
-        msg.message_box(f"Deletion complete(ID: {id_}")
+        
+        msg.message_box(e_msg)
         
     def previous_client(self):
         if self.db_man.prev_client():
+            if not self.next_button.isEnabled():
+                self.next_button.setEnabled(True)
             self.clear_entry()
             self.show_current_client()
+        else:
+            self.prev_button.setEnabled(False)
         
     def next_client(self):
         if self.db_man.next_client():
+            if not self.prev_button.isEnabled():
+                self.prev_button.setEnabled(True)
             self.clear_entry()
             self.show_current_client()
+        else:
+            self.next_button.setEnabled(False)
         
     def show_calendar(self, btn, cal):
         # Position the calendar below the button
@@ -1187,8 +1417,8 @@ class MainWindow(QWidget):
 
     def delete_picture(self):
         self.file_path.clear()
-        self.picture_label.setText("Drag and drop a picture here")
         self.picture_label.setPixmap(QPixmap())
+        self.picture_label.setText("Drag and drop a picture here")
 
     def update_assessment_date(self, date):
         self.initial_assessment.setText(date.toString("MM/dd/yyyy, (ddd)"))
