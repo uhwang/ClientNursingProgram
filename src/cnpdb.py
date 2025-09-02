@@ -1,5 +1,4 @@
 import sqlite3
-from collections import OrderedDict
 from datetime import datetime, timedelta
 from pathlib import Path
 from PyQt5.QtCore import pyqtSignal, QObject
@@ -83,6 +82,18 @@ view_table_head_label=[
     "comments"
 ]
 
+'''
+default_view_visible_key = [
+    view_table_head_label[2],
+    view_table_head_label[3],
+    view_table_head_label[4],
+    view_table_head_label[5],
+    view_table_head_label[6],
+    view_table_head_label[],
+
+]
+'''
+
 def available_view_column_key(col_name):
     index = view_table_head_label.index(col_name)
     return EXPECTED_COLUMNS[index]
@@ -100,7 +111,7 @@ class ClientDB(QObject):
     def close(self):
         if self.conn is not None:
             self.conn.close()
-            
+
     def check(self):
         db_path = Path(self.db_file)
         if db_path.exists() == False:
@@ -184,6 +195,29 @@ class ClientDB(QObject):
     # -------------------
     # Basic CRUD
     # -------------------
+                
+    def remove_all(self):
+        deleted_clients = 0
+        
+        if self.conn is None:
+            self.print_message.emit("... ClientDB::Error::remove_all\n"+
+                                    "    Database is not connected")
+            raise ValueError("Database is not opened!")
+            
+        cursor = self.conn.cursor()
+        try:
+            cursor.execute('DELETE FROM clients;')
+            self.conn.commit()
+            deleted_clients = cursor.rowcount
+        except sqlite3.Error as e:
+            self.print_message.emit("... Error(ClientDB::Error::remove_all\n"+
+                                    "    can't remove all clients\n"+
+                                    f"   {str(e)}")
+            raise RuntimeError(f"Remove all clients failed: {e}")
+        
+        self.print_message.emit(f"... Success: {deleted_clients} clients deleted")
+        return deleted_clients
+        
     def add_client(self, client_data: dict):
         """Insert new client. Blank values allowed."""
         placeholders = ", ".join("?" * len(client_data))
@@ -196,6 +230,11 @@ class ClientDB(QObject):
         except sqlite3.IntegrityError:
             raise ValueError(f"Client with id {client_data['client_id']} already exists.")
 
+    def custom_query(self, key):
+        k_ = ','.join(key)
+        cur = self.conn.execute(f"SELECT {k_} FROM clients")
+        return [dict(self.row_to_client(row, key)) for row in cur.fetchall()]
+        
     def search_by_name_roomnumber(self, f_name, l_name, r_num):
         cur = self.conn.execute("SELECT * FROM clients WHERE first_name_kor, last_name_kor, room_number LIKE ?", (f"%{f_name}%",))
         
@@ -206,38 +245,47 @@ class ClientDB(QObject):
         values = [client_data[k] if client_data[k] else None for k in client_data]
         values.append(client_id)
         query = f"UPDATE clients SET {set_clause} WHERE client_id=?"
+        #try:
         self.conn.execute(query, values)
         self.conn.commit()
-
+        #except Exception as e:
+        #    self.print_message.emit(str(e))
+            
     def delete_client(self, client_id: str):
         """Delete client by ID"""
         self.conn.execute("DELETE FROM clients WHERE client_id=?", (client_id,))
         self.conn.commit()
 
-    def row_to_client(self, row):
-        client = {
-            col_id                    : row[id_index                    ],
-            col_pic_path              : row[pic_path_index              ],
-            col_first_name_kor        : row[first_name_kor_index        ],
-            col_last_name_kor         : row[last_name_kor_index         ],
-            col_first_name_eng        : row[first_name_eng_index        ],
-            col_middle_name_eng       : row[middle_name_eng_index       ],
-            col_last_name_eng         : row[last_name_eng_index         ],
-            col_dob                   : row[dob_index                   ],
-            col_sex                   : row[sex_index                   ],
-            col_room_number           : row[room_number_index           ],
-            col_initial_assessment    : row[initial_assessment_index    ],
-            col_assessment_14th       : row[assessment_14th_index       ],
-            col_assessment_90th       : row[assessment_90th_index       ],
-            col_change_assessment     : row[change_assessment_index     ],
-            col_change_assessment_done: row[change_assessment_done_index],
-            col_comments              : row[comments_index              ]
-        }
+    def row_to_client(self, row, key=None):
+        if key is None:
+            client = {
+                col_id                    : row[id_index                    ],
+                col_pic_path              : row[pic_path_index              ],
+                col_first_name_kor        : row[first_name_kor_index        ],
+                col_last_name_kor         : row[last_name_kor_index         ],
+                col_first_name_eng        : row[first_name_eng_index        ],
+                col_middle_name_eng       : row[middle_name_eng_index       ],
+                col_last_name_eng         : row[last_name_eng_index         ],
+                col_dob                   : row[dob_index                   ],
+                col_sex                   : row[sex_index                   ],
+                col_room_number           : row[room_number_index           ],
+                col_initial_assessment    : row[initial_assessment_index    ],
+                col_assessment_14th       : row[assessment_14th_index       ],
+                col_assessment_90th       : row[assessment_90th_index       ],
+                col_change_assessment     : row[change_assessment_index     ],
+                col_change_assessment_done: row[change_assessment_done_index],
+                col_comments              : row[comments_index              ]
+            }
+        else:
+            client={}
+            for k_, r_ in zip(key, row):
+                client[k_] = r_
+                
         return client
     
     def load_all_clients(self):
         cur = self.conn.execute("SELECT * FROM clients")
-        return [OrderedDict(self.row_to_client(row)) for row in cur.fetchall()]
+        return [dict(self.row_to_client(row)) for row in cur.fetchall()]
     # -------------------
     # Searching
     # -------------------
@@ -293,9 +341,13 @@ class ClientDB(QObject):
         cur = self.conn.execute("SELECT * FROM clients WHERE dob LIKE ?", (f"%/{year}",))
         return [dict(row) for row in cur.fetchall()]
 
+    def search_by_rooms(self, room_):
+        cur = self.conn.execute(f"SELECT * FROM clients WHERE room_number LIKE '{room_}'")
+        return [dict(self.row_to_client(row)) for row in cur.fetchall()]
+        
     def search_by_room(self, room_number: str):
         cur = self.conn.execute("SELECT * FROM clients WHERE room_number=?", (room_number,))
-        return [OrderedDict(self.row_to_client(row)) for row in cur.fetchall()]
+        return [dict(self.row_to_client(row)) for row in cur.fetchall()]
         
     def check_client_id_exists(self, client_id):
         """
