@@ -289,9 +289,16 @@ class ClientDB(QObject):
        
         return client
     
-    def load_all_clients(self):
-        cur = self.conn.execute("SELECT * FROM clients")
-        return [dict(self.row_to_client(row)) for row in cur.fetchall()]
+    def load_all_clients(self, key = None):
+        if key is not None:
+            v_key = ','.join(key)
+        else:
+            v_key = '*'
+            
+        query = f"SELECT {v_key} FROM clients"
+        
+        cur = self.conn.execute(query)
+        return [dict(self.row_to_client(row, key)) for row in cur.fetchall()]
     # -------------------
     # Searching
     # -------------------
