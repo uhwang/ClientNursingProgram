@@ -31,6 +31,7 @@ default_visible_columns = [
     cnpdb.view_table_head_label[cnpdb.last_name_eng_index],
     cnpdb.view_table_head_label[cnpdb.first_name_eng_index],
     cnpdb.view_table_head_label[cnpdb.room_number_index],
+    cnpdb.view_table_head_label[cnpdb.dob_index],
     cnpdb.view_table_head_label[cnpdb.sex_index],
     cnpdb.view_table_head_label[cnpdb.initial_assessment_index],
     cnpdb.view_table_head_label[cnpdb.assessment_14th_index],
@@ -39,18 +40,33 @@ default_visible_columns = [
     cnpdb.view_table_head_label[cnpdb.change_assessment_done_index]
 ]
 
+search_birthday_column_key = "Birth Search"
+
+default_search_birthday_columns = [
+   cnpdb.view_table_head_label[cnpdb.last_name_eng_index],
+   cnpdb.view_table_head_label[cnpdb.first_name_eng_index],
+   cnpdb.view_table_head_label[cnpdb.dob_index]
+]
+
 default_config = {
-    visible_column_key : default_visible_columns
+    visible_column_key : default_visible_columns,
+    search_birthday_column_key : default_search_birthday_columns
 }
 
-visible_columns = [c_ for c_ in default_visible_columns]
+#visible_columns = [c_ for c_ in default_visible_columns]
 
 config = {
-    visible_column_key : visible_columns
+    visible_column_key : default_visible_columns,
+    search_birthday_column_key : default_search_birthday_columns
 }
 
 config_file = "cnp.ini"
 
+def update_birthday_column(new_birthday_column, msg):
+    global config
+    config[search_birthday_column_key] = new_birthday_column
+    save_config(msg)
+    
 def update_visible_column(new_visible_column, msg):
     global config
     config[visible_column_key] = new_visible_column
@@ -72,7 +88,17 @@ def load_config(msg):
                 config = json.load(fp)
         except Exception as e:
             msg.appendPlainText(f"... Fail to load(cnp.ini): {e}")
+            return 
             
+        try:
+            m_ = config[search_birthday_column_key]
+        except Exception as e:
+            msg.appendPlainText("... No birthday search column exist")
+            config[search_birthday_column_key] = default_search_birthday_columns
+        
+def get_birtday_columns():
+    return config[search_birthday_column_key]
+    
 def get_visible_columns():
     return config[visible_column_key]
     
