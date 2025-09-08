@@ -130,12 +130,15 @@ class QSearchBirthdayDlg(QDialog):
         
     def change_view_setting(self):
         # view_table, all_columns, visible_columns, update_visible_column, gmsg):
-        cnpvtbl.show_customize_dialog(self.client_list,
+        new_columns = cnpvtbl.show_customize_dialog(self.db_man.db,
+                                      self.client_list,
                                       self.view_table, 
                                       self.all_column, 
                                       self.visible_columns,
                                       cnpconf.update_birthday_column,
                                       self.gmsg)
+        self.visible_columns = new_columns
+
     def search_client_birthday(self):
         if not any([m_.isChecked() for m_ in self.birth_month]):
             msg.message_box("Select at least any month")
@@ -172,22 +175,4 @@ def search_birthday(db_man, gmsg):
     
     b_ = QSearchBirthdayDlg(db_man, all_columns, visible_columns, gmsg)
     ret = b_.exec_()
-    if ret == QDialog.Accepted:
-        m_ = b_.get_month()
-        print(b_)
-        return
-        v_key = cnpconf.get_birthday_column()        
-        
-        try:
-            db_man.db.custom_query(v_key)
-        except Exception as e:
-            e_msg = f"... Error:{e}"
-            msg.message_box(e_msg)
-            self.global_message.appendPlainText(e_msg)
-            return
-            
-        # multi column sort by month in case of all months
-        
-        # just return the list of clients in case of 
-            
         
