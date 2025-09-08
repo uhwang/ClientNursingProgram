@@ -8,6 +8,8 @@ DB_FILE = "eben_clients.db"
 change_assessment_yes = "Yes"
 change_assessment_no = "No"
 
+table_name = "clients"
+
 EXPECTED_COLUMNS = [
     "client_id",
     "pic_path",
@@ -230,6 +232,10 @@ class ClientDB(QObject):
         except sqlite3.IntegrityError:
             raise ValueError(f"Client with id {client_data['client_id']} already exists.")
 
+    def execute_query(self, query, key=None):
+        cur = self.conn.execute(query)
+        return [dict(self.row_to_client(row, key)) for row in cur.fetchall()]
+        
     def custom_query(self, key):
         k_ = ','.join(key)
         cur = self.conn.execute(f"SELECT {k_} FROM clients")
@@ -280,7 +286,7 @@ class ClientDB(QObject):
             client={}
             for k_, r_ in zip(key, row):
                 client[k_] = r_
-                
+       
         return client
     
     def load_all_clients(self):
