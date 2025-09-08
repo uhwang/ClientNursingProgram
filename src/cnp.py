@@ -1171,8 +1171,7 @@ class MainWindow(QWidget):
             return False
             
         room = [r_[cnpdb.col_room_number] for r_ in client]
-        
-        popup = cnpcomb.PopupCombo(self, room)
+        popup = cnpcomb.PopupCombo(self, sorted(room))
         popup.set_current_item.connect(self.set_selected_room)
         # place the popup just right beside the button
         btn_pos = button.mapToGlobal(QPoint(button.width(), 0))
