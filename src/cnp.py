@@ -4,6 +4,7 @@ Co-creator : ChatGPT, Gemini
 
 08/24/2025 ... Ver 0.1
 08/27/2025 ... Ver 0.2
+09/01/2025 ... Ver 0.3
 
 pyinstaller --onefile --windowed --icon=cnp.ico --exclude-module PySide6 --exclude-module tkinter --exclude-module scipy --exclude-module numpy --exclude-module distutils cnp.py
 '''
@@ -37,7 +38,7 @@ import icon_arrow_left  , icon_arrow_right , icon_folder_open, \
        icon_num_blue_02 , icon_num_blue_03 , icon_num_blue_04, \
        icon_pdf         , icon_trash_03    , icon_system, \
        icon_note        , icon_id          , icon_logout, \
-       icon_clear       , icon_arrow_LR
+       icon_clear       , icon_arrow_LR    , icon_birthday
 
 import cnpdb, cidman, msg, cnpval, clistdlg, cnppdf, cnpconf, \
        cnpword, cnpexcel, cnputil, cnpconf, cnpdrag, cnpcomb
@@ -419,7 +420,7 @@ class ClientCoordinator(QObject):
 class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Client Nursing Program")
+        self.setWindowTitle("Eben Silver Town Client Nursing Program")
         
         layout = QVBoxLayout()
         self.tabs = QTabWidget()
@@ -453,6 +454,7 @@ class MainWindow(QWidget):
         ret = msg.message_box("Are you sure you want to quit?", msg.message_yesno)
         if ret == QMessageBox.Yes: 
             self.db_man.close()
+            cnpconf.save_config(self.global_message)
             event.accept()
         else:
             event.ignore()
@@ -465,7 +467,7 @@ class MainWindow(QWidget):
             client = selected_client
             
         if client is None:
-            msg.message_box("... Error : DB error. See messages.", msg.message_error)
+            msg.message_box("... Warning: no client data.")
             return
         
         pic_path = client[cnpdb.col_pic_path]
@@ -827,17 +829,23 @@ class MainWindow(QWidget):
         self.db_arrow_btn.clicked.connect(self.enable_arrow_bottoms)
         self.db_arrow_btn.setToolTip('Enable prev/next arrow')
         
-                        
+        self.db_search_house = QPushButton()
+        self.db_search_house.setIcon(QIcon(QPixmap(icon_find.table)))
+        self.db_search_house.setIconSize(QSize(32,32))
+        self.db_search_house.clicked.connect(self.find_client)
+        self.db_search_house.setToolTip('Search clients by name')
+
+        self.db_search_birthday = QPushButton()
+        self.db_search_birthday.setIcon(QIcon(QPixmap(icon_birthday.table)))
+        self.db_search_birthday.setIconSize(QSize(32,32))
+        self.db_search_birthday.clicked.connect(self.find_client_birthdat)
+        self.db_search_birthday.setToolTip("Search clients' birthday")
+        
         self.db_delete_all_btn = QPushButton()
         self.db_delete_all_btn.setIcon(QIcon(QPixmap(icon_clear.table)))
         self.db_delete_all_btn.setIconSize(QSize(32,32))
         self.db_delete_all_btn.clicked.connect(self.delete_all_clients)
         self.db_delete_all_btn.setToolTip("Delete All Clients")
-
-        self.db_search_house = QPushButton()
-        self.db_search_house.setIcon(QIcon(QPixmap(icon_find.table)))
-        self.db_search_house.setIconSize(QSize(32,32))
-        self.db_search_house.clicked.connect(self.find_client)
 
         self.db_fetch_all = QPushButton()
         self.db_fetch_all.setIcon(QIcon(QPixmap(icon_fetch_all.table)))
@@ -851,9 +859,10 @@ class MainWindow(QWidget):
         db_layout.addWidget(self.db_export_word, 1,0)
         db_layout.addWidget(self.db_export_excel, 1,1)
         db_layout.addWidget(self.db_arrow_btn, 1,2)
-        db_layout.addWidget(self.db_fetch_all, 2,0)
-        db_layout.addWidget(self.db_delete_all_btn, 2,1)
-        db_layout.addWidget(self.db_search_house, 2,2)
+        db_layout.addWidget(self.db_search_house, 2,0)
+        db_layout.addWidget(self.db_search_birthday, 2,1)
+        db_layout.addWidget(self.db_fetch_all, 3,0)
+        db_layout.addWidget(self.db_delete_all_btn, 3,1)
         db_box.setLayout(db_layout)
         left_panel.addWidget(db_box)
         
@@ -1056,6 +1065,11 @@ class MainWindow(QWidget):
         #self.find_button.clicked.connect(self.find_client)
         #self.delete_button2.clicked.connect(self.delete_client)
     
+    def find_client_birthdat(self):
+        import cnpbirthday
+        
+        cnpbirthday.search_birthday(self.db_man, self.global_message)
+        
     def enable_arrow_bottoms(self):
         self.direction_button(True)
         
@@ -1074,8 +1088,8 @@ class MainWindow(QWidget):
         self.clear_entry()
             
     def save_current_client_(self, word=True):
-        self.global_message.appendPlainText("... save_current_client: %s"%"WORD" \
-        if word else "EXCEL")
+        self.global_message.appendPlainText("... save_current_client: %s"%("WORD" \
+        if word else "EXCEL"))
         
         if self.get_client_id() is None:
             msg.message_box("No client ID found!!", msg.message_warning)
@@ -1431,7 +1445,34 @@ class MainWindow(QWidget):
     def calculate_age(self):
         age = cnputil.calculate_age(self.dob.date())
         self.age.setText(f"Age: {age}")
-
+    '''    
+    def keyPressEvent(self, event):
+        if event.key() in (Qt.Key_Left, Qt.Key_Right):
+            modifiers = QApplication.keyboardModifiers()
+            if modifiers == Qt.ShiftModifier:
+                # ---- Shift+Arrow : navigate tabs ----
+                current = self.tabs.currentIndex()
+                if event.key() == Qt.Key_Left and current > 0:
+                    self.tabs.setCurrentIndex(current - 1)
+                elif event.key() == Qt.Key_Right and current < self.tabs.count() - 1:
+                    self.tabs.setCurrentIndex(current + 1)
+            else:
+                # ---- Just Arrow : navigate clients ----
+                if self.tabs.currentIndex() == 0:  # only in first tab
+                    if event.key() == Qt.Key_Left:
+                        if self.prev_button.isEnabled():
+                            print("prev")
+                            self.prev_client()
+                        #self.client_index -= 1
+                    else:
+                        if self.next_button.isEnabled():
+                            print("next")
+                            self.next_client()
+                        self.client_index += 1
+                    #self.client_label.setText(f"Client: {self.client_index}")
+        else:
+            super().keyPressEvent(event)
+    '''
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setStyle(QStyleFactory.create("Fusion"))
