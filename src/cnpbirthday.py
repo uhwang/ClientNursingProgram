@@ -137,7 +137,8 @@ class QSearchBirthdayDlg(QDialog):
                                       self.visible_columns,
                                       cnpconf.update_birthday_column,
                                       self.gmsg)
-        self.visible_columns = new_columns
+        if new_columns is not None:
+            self.visible_columns = new_columns
 
     def search_client_birthday(self):
         if not any([m_.isChecked() for m_ in self.birth_month]):
