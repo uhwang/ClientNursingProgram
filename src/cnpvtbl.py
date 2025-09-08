@@ -24,7 +24,24 @@ def update_view_table(client_list, view_table, visible_columns):
     view_table.resizeColumnsToContents()
     view_table.horizontalHeader().setStretchLastSection(True)
 
-def show_customize_dialog(client_list, view_table, all_columns, visible_columns, update_func, msg):
+def get_clients(db, visible_columns):
+    v_key = [f"{cnpdb.available_view_column_key(v_)}" for v_ in visible_columns]
+    
+    #self.view_list = self.db_man.db.load_all_clients()
+    try:
+        client_list = db.custom_query(v_key)
+    except Exception as e:
+        e_msg = f"... Error: clients from database\n{e}"
+        msg.message_box(e_msg)
+        self.global_message.appendPlainText(e_msg)
+        return None
+    
+    if client_list == []: 
+        return None
+        
+    return client_list
+            
+def show_customize_dialog(db, client_list, view_table, all_columns, visible_columns, update_func, msg):
     # Create a list of currently selected columns and available columns
     available = [col for col in all_columns if col not in visible_columns]
     
@@ -47,9 +64,11 @@ def show_customize_dialog(client_list, view_table, all_columns, visible_columns,
                 update_visible_column = True
                 break
                 
-        visible_columns = new_visible_columns      
-        update_view_table(client_list, view_table, visible_columns)
-
         if update_visible_column:
             update_func(new_visible_columns, msg)
-            cnpconf.save_config(msg)
+            client_list = get_clients(db, new_visible_columns)
+            visible_columns = new_visible_columns[:]
+            update_view_table(client_list, view_table, visible_columns)
+            return new_visible_columns
+            
+    return None
