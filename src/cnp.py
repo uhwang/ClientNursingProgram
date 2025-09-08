@@ -38,7 +38,8 @@ import icon_arrow_left  , icon_arrow_right , icon_folder_open, \
        icon_num_blue_02 , icon_num_blue_03 , icon_num_blue_04, \
        icon_pdf         , icon_trash_03    , icon_system, \
        icon_note        , icon_id          , icon_logout, \
-       icon_clear       , icon_arrow_LR    , icon_birthday
+       icon_clear       , icon_arrow_LR    , icon_birthday, \
+       icon_chart 
 
 import cnpdb, cidman, msg, cnpval, clistdlg, cnppdf, cnpconf, \
        cnpword, cnpexcel, cnputil, cnpconf, cnpdrag, cnpcomb
@@ -728,13 +729,30 @@ class MainWindow(QWidget):
                     update_visible_column = True
                     break
                     
-            self.visible_columns = new_visible_columns      
-            self.update_view_table()
-
             if update_visible_column:
                 cnpconf.update_visible_column(new_visible_columns, self.global_message)
                 cnpconf.save_config(self.global_message)
+                self.visible_columns = new_visible_columns   
+                self.view_list = self.get_view_client()
    
+            self.update_view_table()
+
+    def get_view_client(self):
+        # create SQLite keys for search
+        v_key = [f"{cnpdb.available_view_column_key(v_)}" for v_ in self.visible_columns]
+        
+        try:
+            client_list = self.db_man.db.custom_query(v_key)
+        except Exception as e:
+            e_msg = f"... Error: clients from database\n{e}"
+            msg.message_box(e_msg)
+            self.global_message.appendPlainText(e_msg)
+            return None
+        
+        if self.view_list == []: 
+            return None
+        return client_list
+    
     def view_all_client(self):
         self.global_message.appendPlainText("... view_all_client")
         # create SQLite keys for search
@@ -841,6 +859,12 @@ class MainWindow(QWidget):
         self.db_search_birthday.clicked.connect(self.find_client_birthdat)
         self.db_search_birthday.setToolTip("Search clients' birthday")
         
+        self.db_chart = QPushButton()
+        self.db_chart.setIcon(QIcon(QPixmap(icon_chart.table)))
+        self.db_chart.setIconSize(QSize(32,32))
+        self.db_chart.clicked.connect(self.plot_chart)
+        self.db_chart.setToolTip("Chart of Age")
+        
         self.db_delete_all_btn = QPushButton()
         self.db_delete_all_btn.setIcon(QIcon(QPixmap(icon_clear.table)))
         self.db_delete_all_btn.setIconSize(QSize(32,32))
@@ -861,6 +885,7 @@ class MainWindow(QWidget):
         db_layout.addWidget(self.db_arrow_btn, 1,2)
         db_layout.addWidget(self.db_search_house, 2,0)
         db_layout.addWidget(self.db_search_birthday, 2,1)
+        db_layout.addWidget(self.db_chart, 2,2)
         db_layout.addWidget(self.db_fetch_all, 3,0)
         db_layout.addWidget(self.db_delete_all_btn, 3,1)
         db_box.setLayout(db_layout)
@@ -1065,6 +1090,11 @@ class MainWindow(QWidget):
         #self.find_button.clicked.connect(self.find_client)
         #self.delete_button2.clicked.connect(self.delete_client)
     
+    def plot_chart(self):
+        import cnpchart
+        
+        cnpchart.create_client_chart(self.db_man, self.global_message)
+        
     def find_client_birthdat(self):
         import cnpbirthday
         
