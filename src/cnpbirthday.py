@@ -12,7 +12,7 @@ from PyQt5.QtCore import Qt, QSize
 from PyQt5.QtGui import QPixmap, QIcon, QFont
 
 import cnpdb, cnpval, cnpconf, cnpvtbl, msg
-import icon_system, icon_view_setting
+import icon_system, icon_view_setting, icon_trashcan
 
 _all_selected = "All"
 _none_selected = "None"
@@ -93,11 +93,18 @@ class QSearchBirthdayDlg(QDialog):
         self.column_setting.clicked.connect(self.change_view_setting)
         self.column_setting.setToolTip('Customize columns')
 
+        self.clear_table = QPushButton()
+        self.clear_table.setIcon(QIcon(QPixmap(icon_trashcan.table)))
+        self.clear_table.setIconSize(QSize(16,16))
+        self.clear_table.clicked.connect(self.clear_table_items)
+        self.clear_table.setToolTip('Clear table')
+
         i_ += 1
-        m_layout.addWidget(self.all_btn, i_, 0)
-        m_layout.addWidget(self.ok, i_, 1)
-        m_layout.addWidget(self.cancel, i_, 2)
-        m_layout.addWidget(self.column_setting, i_, 3)
+        m_layout.addWidget(self.all_btn       , i_, 0)
+        m_layout.addWidget(self.ok            , i_, 1)
+        m_layout.addWidget(self.cancel        , i_, 2)
+        m_layout.addWidget(self.clear_table   , i_, 3)
+        m_layout.addWidget(self.column_setting, i_, 4)
 
         header_ = cnpconf.get_birtday_columns()
         self.view_table = QTableWidget()
@@ -112,6 +119,9 @@ class QSearchBirthdayDlg(QDialog):
         self.setWindowTitle("Find Birthday")
         self.setWindowIcon(QIcon(QPixmap(icon_system.table)))
 
+    def clear_table_items(self):
+        self.view_table.setRowCount(0)
+        
     def set_month_status(self, status = False):
         for m_ in self.birth_month:
             m_.setChecked(status)
