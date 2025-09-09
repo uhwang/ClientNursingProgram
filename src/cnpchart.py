@@ -5,8 +5,8 @@
 
 '''
 from collections import defaultdict
-import matplotlib.pyplot as plt
-import numpy as np
+#import matplotlib.pyplot as plt
+#import numpy as np
 import openpyxl
 from openpyxl import Workbook
 from openpyxl.chart import BarChart, PieChart, Reference, Series
@@ -25,7 +25,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QSize, QDate
 from PyQt5.QtGui import QPixmap, QIcon
 
-import msg
+import msg, color
 import cnpdb, cnpval, cnpconf, cnpvtbl, msg, cnpval, cnputil
 import icon_system, icon_view_setting, icon_chart_bar, \
        icon_chart_pie
@@ -102,24 +102,31 @@ class QChartDlg(QDialog):
                 
                 for row_data in client_data:
                     ws.append(row_data)
-                data_ref = Reference(ws, min_col=2, min_row=1, max_row=len(client_data))
     
                 # --- 2. Create a Bar Chart for Client Ages ---
                 # Create a reference to the data for the bar chart
                 data_ref = Reference(ws, min_col=2, min_row=1, max_row=len(client_data))
                 
                 # Create a reference to the categories (client names)
-                labels_ref = Reference(ws, min_col=1, min_row=2, max_row=len(client_data))
+                labels_ref = Reference(ws, min_col=1, min_row=1, max_row=len(client_data))
             
                 # Create the bar chart object
                 bar_chart = BarChart()
+                bar_chart.type = "col"
+                bar_chart.style = 10
                 bar_chart.title = "Client Ages"
                 bar_chart.y_axis.title = "Age"
                 bar_chart.x_axis.title = "Client"
+                bar_chart.y_axis.visible = True
+                bar_chart.y_axis.majorTickMark = "in"
+                bar_chart.y_axis.tickLblPos = 'nextTo'
+                # Customize the appearance of bars
             
                 # Add the data and categories to the chart
                 bar_chart.add_data(data_ref, titles_from_data=True)
                 bar_chart.set_categories(labels_ref)
+                bar_chart.series[0].graphicalProperties.solidFill = "4472C4"  # Blue color
+                bar_chart.series[0].graphicalProperties.line.solidFill = "2E5A87"  # Darker blue border
             
                 # Place the chart on the worksheet starting at cell E2
                 ws.add_chart(bar_chart, "E2")            
@@ -128,7 +135,7 @@ class QChartDlg(QDialog):
             except Exception as e:
                 e_msg = f"Error: Pie Chart\n{e}"
                 self.gmsg.appendPlainText(e_msg)
-                message_box(e_msg)
+                msg.message_box(e_msg)
                 return
             
         if self.pie_chart.isChecked():
@@ -188,9 +195,11 @@ class QChartDlg(QDialog):
                 #colormap = plt.colormaps['tab20c']
                 #colormap = plt.colormaps['RdYlGn']
                 #colormap = plt.colormaps['hsv']
-                colormap = plt.colormaps['Spectral']
-                colors = colormap(np.linspace(0, 1, num_pieces))
-                hex_colors = [f'#{int(r*255):02x}{int(g*255):02x}{int(b*255):02x}' for r, g, b, a in colors]
+                #colormap = plt.colormaps['Spectral']
+                colormap = color.create_color_table(0,190,0.5,1,ws.max_row)
+                #colors = colormap(np.linspace(0, 1, num_pieces))
+                #hex_colors = [f'#{int(r*255):02x}{int(g*255):02x}{int(b*255):02x}' for r, g, b, a in colors]
+                hex_colors = [f'#{c_.r:02x}{c_.g:02x}{c_.b:02x}' for c_ in colormap]
 
                 # Create a DataLabelList object for customization
                 data_labels = DataLabelList()
@@ -205,6 +214,10 @@ class QChartDlg(QDialog):
                 series.dLbls = DataLabelList()
                 series.dLbls.showCatName = True
                 series.dLbls.showVal = True
+                series.dLbls.showPercent = True
+                series.dLbls.showSerName = False
+                series.dLbls.showLegendKey = False
+                series.dLbls.position = 'bestFit' 
                 pie_chart.series.append(series)
                 
                 # 5. Apply the custom colors to each slice
@@ -219,19 +232,9 @@ class QChartDlg(QDialog):
                     dp = DataPoint(idx=i, spPr=gp)
                     series_.dPt.append(dp)
                     
-                # 7. Configure Data Labels to show only Percentage
-                series_.dLbls = DataLabelList()
-                series_.dLbls.show_percent = True
-                series_.dLbls.show_cat_name = False
-                series_.dLbls.show_val = True
-                series_.dLbls.show_ser_name = False
-                series_.dLbls.show_legend_key = False
-                series_.dLbls.position = 'bestFit'       
-                    
                 # The corrected line: directly append the series to the chart's series list
                 pie_chart.set_categories(labels_ref)
 
-                
                 # Add the chart to the worksheet
                 # The chart will be positioned starting at cell D2
                 ws.add_chart(pie_chart, "D2")
