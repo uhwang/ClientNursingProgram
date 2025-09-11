@@ -5,16 +5,7 @@
 
 '''
 from collections import defaultdict
-#import matplotlib.pyplot as plt
-#import numpy as np
-import openpyxl
-from openpyxl import Workbook
-from openpyxl.chart import BarChart, PieChart, Reference, Series
-from openpyxl.chart.label import DataLabelList
-from openpyxl.chart.series import DataPoint
-from openpyxl.styles import PatternFill
-from openpyxl.drawing.colors import ColorChoice
-from openpyxl.chart.shapes import GraphicalProperties # Correct import
+import xlsxwriter 
 
 from PyQt5.QtWidgets import (
      QPushButton   , QHBoxLayout   , QVBoxLayout, 
@@ -96,42 +87,39 @@ class QChartDlg(QDialog):
             
         if self.bar_chart.isChecked():
             try:
-                wb = Workbook()
-                ws = wb.active
-                ws.title = "Individual Age"
-                
-                for row_data in client_data:
-                    ws.append(row_data)
-    
-                # --- 2. Create a Bar Chart for Client Ages ---
-                # Create a reference to the data for the bar chart
-                data_ref = Reference(ws, min_col=2, min_row=1, max_row=len(client_data))
-                
-                # Create a reference to the categories (client names)
-                labels_ref = Reference(ws, min_col=1, min_row=1, max_row=len(client_data))
-            
-                # Create the bar chart object
-                bar_chart = BarChart()
-                bar_chart.type = "col"
-                bar_chart.style = 10
-                bar_chart.title = "Client Ages"
-                bar_chart.y_axis.title = "Age"
-                bar_chart.x_axis.title = "Client"
-                bar_chart.y_axis.visible = True
-                bar_chart.y_axis.majorTickMark = "in"
-                bar_chart.y_axis.tickLblPos = 'nextTo'
-                # Customize the appearance of bars
-            
-                # Add the data and categories to the chart
-                bar_chart.add_data(data_ref, titles_from_data=True)
-                bar_chart.set_categories(labels_ref)
-                bar_chart.series[0].graphicalProperties.solidFill = "4472C4"  # Blue color
-                bar_chart.series[0].graphicalProperties.line.solidFill = "2E5A87"  # Darker blue border
-            
-                # Place the chart on the worksheet starting at cell E2
-                ws.add_chart(bar_chart, "E2")            
-                wb.save(_bar_chart_fname)
-                wb = None
+                # Create workbook and worksheet
+                workbook = xlsxwriter.Workbook(_bar_chart_fname)
+                worksheet = workbook.add_worksheet("Individual Age")
+        
+                # Write client data (names + ages)
+                for row_idx, row_data in enumerate(client_data):
+                    worksheet.write(row_idx, 0, row_data[0])  # Name
+                    worksheet.write(row_idx, 1, row_data[1])  # Age
+        
+                # Create bar/column chart
+                chart = workbook.add_chart({'type': 'column'})
+        
+                # Add data series
+                chart.add_series({
+                    'name':       'Client Ages',
+                    'categories': ['Individual Age', 0, 0, len(client_data)-1, 0],  # Names
+                    'values':     ['Individual Age', 0, 1, len(client_data)-1, 1],  # Ages
+                    'fill':       {'color': '#4472C4'},  # Bar color
+                    'border':     {'color': '#2E5A87'},  # Border color
+                })
+        
+                # Set axis titles
+                chart.set_x_axis({'name': 'Client'})
+                chart.set_y_axis({'name': 'Age'})
+        
+                # Chart title
+                chart.set_title({'name': 'Client Ages'})
+        
+                # Insert chart into worksheet
+                worksheet.insert_chart('E2', chart)
+        
+                workbook.close()
+                workbook = None
             except Exception as e:
                 e_msg = f"Error: Pie Chart\n{e}"
                 self.gmsg.appendPlainText(e_msg)
@@ -140,9 +128,8 @@ class QChartDlg(QDialog):
             
         if self.pie_chart.isChecked():
             try:
-                wb = Workbook()
-                ws = wb.active
-                ws.title = "Individual Age"
+                workbook = xlsxwriter.Workbook(_pie_chart_fname)
+                worksheet = workbook.add_worksheet("Individual Age")
                     
                 ages = [a_[1] for a_ in client_data]
                 # Use a defaultdict to simplify counting
@@ -171,75 +158,59 @@ class QChartDlg(QDialog):
                 
                 age_groups = {group: count for group, count in age_groups.items() if count > 0}
 
-                # --- Write age group data to the worksheet ---
-                # The chart needs to reference data in cells, so we write it first.
-                ws.cell(row=1, column=1, value="Age Group")
-                ws.cell(row=1, column=2, value="Count")
+                # --- Write header and data to sheet ---
+                worksheet.write(0, 0, "Age Group")
+                worksheet.write(0, 1, "Count")
+                # Write rows starting at row 1
+                for i, (group, count) in enumerate(age_groups.items(), start=1):
+                    worksheet.write(i, 0, group)
+                    worksheet.write(i, 1, count)
         
-                # Start writing data from the second row
-                for i, (group, count) in enumerate(age_groups.items(), start=2):
-                    ws.cell(row=i, column=1, value=group)
-                    ws.cell(row=i, column=2, value=count)
-
-                # --- Create the Pie Chart ---
-                pie_chart = PieChart()
-                pie_chart.title = "Client Age Group Distribution"
-                
-                # Define the data and labels for the chart
-                # We need to reference the cells where we wrote the data
-                data_ref = Reference(ws, min_col=2, min_row=2, max_row=ws.max_row)
-                labels_ref = Reference(ws, min_col=1, min_row=2, max_row=ws.max_row)
-                
-                # 1. Generate colors using matplotlib's 'viridis' colormap
-                num_pieces = len(age_groups)
-                #colormap = plt.colormaps['tab20c']
-                #colormap = plt.colormaps['RdYlGn']
-                #colormap = plt.colormaps['hsv']
-                #colormap = plt.colormaps['Spectral']
-                colormap = color.create_color_table(0,190,0.5,1,ws.max_row)
-                #colors = colormap(np.linspace(0, 1, num_pieces))
-                #hex_colors = [f'#{int(r*255):02x}{int(g*255):02x}{int(b*255):02x}' for r, g, b, a in colors]
+                num_slices = len(age_groups)
+        
+                # --- Generate hex color list ---
+                hex_colors = None
+        
+ 
+                colormap = color.create_color_table(0, 190, 0.5, 1, num_slices)
+                # Expect objects with .r, .g, .b ints 0-255
                 hex_colors = [f'#{c_.r:02x}{c_.g:02x}{c_.b:02x}' for c_ in colormap]
 
-                # Create a DataLabelList object for customization
-                data_labels = DataLabelList()
-                # Set show_percent to True to display percentages
-                data_labels.show_percent = True
-                # Set the position to 'bestFit' to prevent labels from overlapping
-                data_labels.position = 'bestFit'
-                pie_chart.data_labels = data_labels
-                
-                # Create the series and add it to the chart's series list
-                series = Series(values=data_ref)
-                series.dLbls = DataLabelList()
-                series.dLbls.showCatName = True
-                series.dLbls.showVal = True
-                series.dLbls.showPercent = True
-                series.dLbls.showSerName = False
-                series.dLbls.showLegendKey = False
-                series.dLbls.position = 'bestFit' 
-                pie_chart.series.append(series)
-                
-                # 5. Apply the custom colors to each slice
-                series_ = pie_chart.series[0]
-                
-                for i, color_hex in enumerate(hex_colors):
-                    color_choice = ColorChoice(prstClr=None, srgbClr=color_hex.lstrip('#'))
-                    # Create a GraphicalProperties object
-                    gp = GraphicalProperties(solidFill=color_choice)
-                    
-                    # Assign the GraphicalProperties object to DataPoint's spPr
-                    dp = DataPoint(idx=i, spPr=gp)
-                    series_.dPt.append(dp)
-                    
-                # The corrected line: directly append the series to the chart's series list
-                pie_chart.set_categories(labels_ref)
-
-                # Add the chart to the worksheet
-                # The chart will be positioned starting at cell D2
-                ws.add_chart(pie_chart, "D2")
-                wb.save(_pie_chart_fname)
-                wb = None
+                # 3) Fallback: simple HSV-based generator (no external deps)
+                if hex_colors is None:
+                    hex_colors = []
+                    for i in range(num_slices):
+                        # vary hue across a subset to avoid too-green-only palettes
+                        hue = (i / max(1, num_slices)) * 0.8  # 0..0.8 of hue wheel
+                        r, g, b = colorsys.hsv_to_rgb(hue, 0.6, 0.95)
+                        hex_colors.append('#{:02x}{:02x}{:02x}'.format(int(r*255), int(g*255), int(b*255)))
+        
+                # --- Create the pie chart and apply colors per-slice ---
+                chart = workbook.add_chart({'type': 'pie'})
+        
+                # Construct 'points' list for custom slice colors
+                points = [{'fill': {'color': color_hex}} for color_hex in hex_colors]
+        
+                # Add series: data rows are from row 1 to row 1+num_slices-1
+                chart.add_series({
+                        'name':       'Client Age Group Distribution',
+                        'categories': ['Individual Age', 1, 0, num_slices, 0],
+                        'values':     ['Individual Age', 1, 1, num_slices, 1],
+                        'points':     points,
+                        'data_labels': {
+                        'percentage': True,
+                        'category': True,
+                        'value': True,
+                        'leader_lines': True
+                    },
+                })
+        
+                chart.set_title({'name': 'Client Age Group Distribution'})
+        
+                # Insert chart (same placement as your original)
+                worksheet.insert_chart('D2', chart)
+                workbook.close()
+                workbook = None
             except Exception as e:
                 e_msg = f"Error: Pie Chart\n{e}"
                 self.gmsg.appendPlainText(e_msg)
