@@ -141,6 +141,10 @@ class QSearchBirthdayDlg(QDialog):
         pass
         
     def save_client_excel(self):
+        if self.client_list is None:
+            msg.message_box("No client data")
+            return
+            
         try:
             cnpexcel.export_clients_to_excel(
                     self.client_list, 
@@ -153,6 +157,10 @@ class QSearchBirthdayDlg(QDialog):
             msg.message_box(e_msg)
             
     def save_client_pdf(self):
+        if self.client_list is None:
+            msg.message_box("No client data")
+            return
+
         try:
             cnppdf.export_clients_to_pdf(
                     self.client_list, 
