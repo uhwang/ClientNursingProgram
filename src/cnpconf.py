@@ -15,6 +15,9 @@ export_title = "Client List"
 save_word_fname_cur_client = "eben_client.docx"
 save_excel_fname_cur_client = "eben_client.xlsx"
 
+save_birthday_pdf = "eben_birthday.pdf"
+save_birthday_excel = "eben_birthday.xlsx"
+
 font_folder_path = os.path.join(os.environ['SystemRoot'], 'Fonts')
 pdf_kfont = 'batang.ttc'
 pdf_kfont_file = os.path.join(font_folder_path,pdf_kfont)
