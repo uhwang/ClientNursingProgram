@@ -9,8 +9,9 @@ from PyQt5.QtWidgets import (
      )
      
 from PyQt5.QtGui import QPixmap, QIcon     
-import msg
+import cnpdb, msg
 import icon_system
+
 _search_by_lname_kr = 0
 _search_by_fname_kr = 1
 _search_by_lname_en = 2
@@ -73,15 +74,20 @@ class FindDialog(QDialog):
         if value == "":
             msg.message_box("No name!!", msg.message_warning)
             return
-            
-        if self.field == _search_by_lname_kr:
-            self.result = self.db.search_by_lastname_kr(value)
-        elif self.field == _search_by_fname_kr:
-            self.result = self.db.search_by_firstname_kr(value)
-        elif self.field == _search_by_lname_en:
-            self.result = self.db.search_by_lastname_eng(value)
-        elif self.field == _search_by_fname_en:
-            self.result = self.db.search_by_firstname_eng(value)
+        
+        try: 
+            if self.field == _search_by_lname_kr:
+                self.result = self.db.search_by_lastname_kr(value)
+            elif self.field == _search_by_fname_kr:
+                self.result = self.db.search_by_firstname_kr(value)
+            elif self.field == _search_by_lname_en:
+                self.result = self.db.search_by_lastname_eng(value)
+            elif self.field == _search_by_fname_en:
+                self.result = self.db.search_by_firstname_eng(value)
+        except Exception as e:
+            e_msg = f"Error: {e}"
+            msg.message_box(e_msg)
+            return 
             
         if self.result == []:
             msg.message_box("No matching clients found.")
@@ -89,7 +95,7 @@ class FindDialog(QDialog):
             self.accept()
         else:
             #msg.message_box("%d clients found!"%len(self.result))
-            
+            self.client_table.setRowCount(0)
             self.client_table.setRowCount(len(self.result))
             for row_idx, row_data in enumerate(self.result):
                 if self.field == _search_by_lname_kr or \
