@@ -11,7 +11,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QSize
 from PyQt5.QtGui import QPixmap, QIcon, QFont
 
-import cnpdb, cnpval, cnpconf, cnpvtbl, msg
+import cnpdb, cnpval, cnpconf, cnpvtbl, cnppdf, cnpexcel, msg
 import icon_system, icon_view_setting, icon_trashcan
 
 _all_selected = "All"
@@ -99,12 +99,30 @@ class QSearchBirthdayDlg(QDialog):
         self.clear_table.clicked.connect(self.clear_table_items)
         self.clear_table.setToolTip('Clear table')
 
+        self.age_column = QPushButton('Age')
+        self.age_column.clicked.connect(self.add_age_column)
+        self.age_column.setToolTip('Add Age Column')
+
+        self.save_pdf = QPushButton('PDF')
+        self.save_pdf.clicked.connect(self.save_client_pdf)
+        self.save_pdf.setToolTip('Save as PDF')
+
+        self.save_excel = QPushButton('Excel')
+        self.save_excel.clicked.connect(self.save_client_excel)
+        self.save_excel.setToolTip('Save as Excel')
+        
+        
         i_ += 1
         m_layout.addWidget(self.all_btn       , i_, 0)
         m_layout.addWidget(self.ok            , i_, 1)
         m_layout.addWidget(self.cancel        , i_, 2)
         m_layout.addWidget(self.clear_table   , i_, 3)
         m_layout.addWidget(self.column_setting, i_, 4)
+        #m_layout.addWidget(self.age_column, i_, 5)
+        
+        i_ += 1
+        m_layout.addWidget(self.save_pdf, i_, 0)
+        m_layout.addWidget(self.save_excel, i_, 1)
 
         header_ = cnpconf.get_birtday_columns()
         self.view_table = QTableWidget()
@@ -119,8 +137,37 @@ class QSearchBirthdayDlg(QDialog):
         self.setWindowTitle("Find Birthday")
         self.setWindowIcon(QIcon(QPixmap(icon_system.table)))
 
+    def add_age_column(self):
+        pass
+        
+    def save_client_excel(self):
+        try:
+            cnpexcel.export_clients_to_excel(
+                    self.client_list, 
+                    self.visible_columns,
+                    cnpconf.save_birthday_excel,
+                    "Birthday")
+        except Exception as e:
+            e_msg = f"Error: {e}"
+            self.gmsg.appendPlainText(e_msg)
+            msg.message_box(e_msg)
+            
+    def save_client_pdf(self):
+        try:
+            cnppdf.export_clients_to_pdf(
+                    self.client_list, 
+                    self.visible_columns,
+                    cnpconf.save_birthday_pdf,
+                    cnpconf.export_pdf_portrait,
+                    "Birthday")
+        except Exception as e:
+            e_msg = f"Error: {e}"
+            self.gmsg.appendPlainText(e_msg)
+            msg.message_box(e_msg)
+        
     def clear_table_items(self):
         self.view_table.setRowCount(0)
+        self.client_list = None
         
     def set_month_status(self, status = False):
         for m_ in self.birth_month:
