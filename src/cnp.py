@@ -5,6 +5,7 @@ Co-creator : ChatGPT, Gemini
 08/24/2025 ... Ver 0.1
 08/27/2025 ... Ver 0.2
 09/01/2025 ... Ver 0.3
+09/13/2025 ... Ver 0.4 
 
 pyinstaller --onefile --windowed --icon=cnp.ico --exclude-module PySide6 --exclude-module tkinter --exclude-module scipy --exclude-module numpy --exclude-module distutils cnp.py
 '''
@@ -42,382 +43,9 @@ import icon_arrow_left  , icon_arrow_right , icon_folder_open, \
        icon_chart 
 
 import cnpdb, cidman, msg, cnpval, clistdlg, cnppdf, cnpconf, \
-       cnpword, cnpexcel, cnputil, cnpconf, cnpdrag, cnpcomb
+       cnpword, cnpexcel, cnputil, cnpconf, cnpdrag, cnpcomb, \
+       cnpccoord, cnpfind, cnpvtbl
        
-
-class CustomizeTableDlg(QDialog):
-    def __init__(self, available_columns, selected_columns, parent=None):
-        super(CustomizeTableDlg, self).__init__(parent)
-        self.setWindowTitle("Customize Table Columns")
-        
-        self.available_columns = available_columns
-        self.selected_columns = selected_columns
-        self.initUI()
-        self.setWindowTitle("Add or Remove Columns")
-        self.setWindowIcon(QIcon(QPixmap(icon_system.table)))
-        
-    def initUI(self):
-        main_layout = QHBoxLayout()
-        
-        # Left ListWidget (Available Columns)
-        left_layout = QVBoxLayout()
-        left_layout.addWidget(QLabel("Available Columns"))
-        self.available_list = QListWidget()
-        self.available_list.addItems(self.available_columns)
-        self.available_list.setSelectionMode(QAbstractItemView.SingleSelection)
-        left_layout.addWidget(self.available_list)
-        
-        # Center Buttons (Add/Remove)
-        button_layout = QVBoxLayout()
-        add_btn = QPushButton("--> Add")
-        remove_btn = QPushButton("<-- Remove")
-        button_layout.addStretch()
-        button_layout.addWidget(add_btn)
-        button_layout.addWidget(remove_btn)
-        button_layout.addStretch()
-        
-        # Right ListWidget (Selected Columns) and Reorder Buttons
-        right_layout = QVBoxLayout()
-        right_layout.addWidget(QLabel("Selected Columns"))
-        
-        right_list_layout = QHBoxLayout()
-        self.selected_list = QListWidget()
-        self.selected_list.addItems(self.selected_columns)
-        self.selected_list.setSelectionMode(QAbstractItemView.SingleSelection)
-        
-        reorder_button_layout = QVBoxLayout()
-        move_up_btn = QPushButton()
-        move_up_btn.setIcon(QIcon(QPixmap(icon_up.table)))
-        move_up_btn.setIconSize(QSize(32,32))
-        
-        move_down_btn = QPushButton()
-        move_down_btn.setIcon(QIcon(QPixmap(icon_down.table)))
-        move_down_btn.setIconSize(QSize(32,32))
-        
-        reorder_button_layout.addStretch()
-        reorder_button_layout.addWidget(move_up_btn)
-        reorder_button_layout.addWidget(move_down_btn)
-        reorder_button_layout.addStretch()
-        
-        right_list_layout.addWidget(self.selected_list)
-        right_list_layout.addLayout(reorder_button_layout)
-        
-        right_layout.addLayout(right_list_layout)
-        
-        # Dialog buttons
-        self.buttonBox = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        self.buttonBox.accepted.connect(self.accept)
-        self.buttonBox.rejected.connect(self.reject)
-        
-        # Connect button signals to methods
-        add_btn.clicked.connect(self.add_item)
-        remove_btn.clicked.connect(self.remove_item)
-        move_up_btn.clicked.connect(self.move_up)
-        move_down_btn.clicked.connect(self.move_down)
-        
-        # Final Layout
-        main_layout.addLayout(left_layout)
-        main_layout.addLayout(button_layout)
-        main_layout.addLayout(right_layout)
-        
-        final_layout = QVBoxLayout()
-        final_layout.addLayout(main_layout)
-        final_layout.addWidget(self.buttonBox)
-        self.setLayout(final_layout)
-        
-    def add_item(self):
-        current_item = self.available_list.currentItem()
-        if current_item:
-            row = self.available_list.row(current_item)
-            item_text = self.available_list.takeItem(row)
-            self.selected_list.addItem(item_text)
-            self.selected_list.setCurrentItem(self.selected_list.item(self.selected_list.count() - 1))
-
-    def remove_item(self):
-        current_item = self.selected_list.currentItem()
-        if current_item:
-            row = self.selected_list.row(current_item)
-            item_text = self.selected_list.takeItem(row)
-            self.available_list.addItem(item_text)
-            
-    def move_up(self):
-        current_item = self.selected_list.currentItem()
-        if current_item:
-            row = self.selected_list.row(current_item)
-            if row > 0:
-                item = self.selected_list.takeItem(row)
-                self.selected_list.insertItem(row - 1, item)
-                self.selected_list.setCurrentRow(row - 1)
-                
-    def move_down(self):
-        current_item = self.selected_list.currentItem()
-        if current_item:
-            row = self.selected_list.row(current_item)
-            if row < self.selected_list.count() - 1:
-                item = self.selected_list.takeItem(row)
-                self.selected_list.insertItem(row + 1, item)
-                self.selected_list.setCurrentRow(row + 1)
-            
-    def get_selected_columns(self):
-        return [self.selected_list.item(i).text() for i in range(self.selected_list.count())]
-        
-class QChooseRoomNumberDlg(QDialog):
-    def __init__(self, db):
-        super(QChooseRoomNumberDlg, self).__init__()
-        self.db = db
-        self.initUI()
-        self.room_number_tbl.resizeColumnsToContents()
-        self.setWindowTitle("Find a room")
-        self.setWindowIcon(QIcon(QPixmap(icon_system.table)))
-
-    def initUI(self):
-        main_layout = QVBoxLayout()
-        
-        # Table setup
-        self.room_number_tbl = QTableWidget()
-        self.room_number_tbl.setColumnCount(1)
-        self.room_number_tbl.setHorizontalHeaderItem(0, QTableWidgetItem("Room#"))
-        
-        # This line makes the single column stretch to fill the available width
-        self.room_number_tbl.horizontalHeader().setStretchLastSection(True) 
-        
-        # Disable horizontal scroll bar
-        self.room_number_tbl.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        
-        rm = self.db.get_rooms()
-        
-        # Add rows before setting items
-        self.room_number_tbl.setRowCount(len(rm))
-        
-        for k, r in enumerate(rm):
-            item = QTableWidgetItem(r)
-            self.room_number_tbl.setItem(k, 0, item)
-        
-        self.room_number_tbl.resizeColumnsToContents()
-        
-        # Grid layout for controls
-        control_layout = QGridLayout()
-        
-        self.ok = QPushButton('OK')
-        self.cancel = QPushButton('CANCEL')
-        self.ok.clicked.connect(self.accept)
-        self.cancel.clicked.connect(self.reject)
-        
-        control_layout.addWidget(self.ok, 1, 0)
-        control_layout.addWidget(self.cancel, 1, 1)
-        
-        # Add widgets to the main layout
-        main_layout.addWidget(self.room_number_tbl)
-        main_layout.addLayout(control_layout)
-        
-        self.setLayout(main_layout)
-        self.setWindowTitle("Choose Room#")
-        
-    def get_current_room(self):
-        return self.room_number_tbl.currentRow()
-
-_search_by_lname_kr = 0
-_search_by_fname_kr = 1
-_search_by_lname_en = 2
-_search_by_fname_en = 3
-        
-class FindDialog(QDialog):
-    def __init__(self, db, view=False):
-        super().__init__()
-        self.db = db
-        self.result = None
-        self.view = view
-        self.setWindowTitle("Find Client")
-        layout = QVBoxLayout()
-
-        self.search_field = QComboBox()
-        self.search_field.addItems([
-            "last_name_kr", "first_name_kr",
-            "last_name_en", "first_name_en",
-            #"dob", "room_number"
-        ])
-        self.search_field.setCurrentIndex(_search_by_fname_en)
-        
-        l_ = QGridLayout()
-        self.search_value = QLineEdit()
-        self.find_button = QPushButton("Find")
-        self.find_button.clicked.connect(self.search)
-
-        l_.addWidget(QLabel("Search by:"),0,0)
-        l_.addWidget(self.search_field,0,1)
-        l_.addWidget(QLabel("Value:"),1,0)
-        l_.addWidget(self.search_value,1,1)
-        l_.addWidget(self.find_button,2,0,1,2)
-        layout.addLayout(l_)
-        
-        if not view:
-            self.client_table = QTableWidget()
-            header_ = ["Last", "First"]
-            self.client_table.setColumnCount(len(header_))
-            self.client_table.setHorizontalHeaderLabels(header_)
-            self.client_table.horizontalHeader().setStretchLastSection(True) 
-            layout.addWidget(self.client_table)
-        
-        l_ = QHBoxLayout()
-        self.ok = QPushButton('OK')
-        self.ok.clicked.connect(self.accept)
-        self.cancel = QPushButton('CANCEL')
-        self.cancel.clicked.connect(self.reject)
-        l_.addWidget(self.ok)
-        l_.addWidget(self.cancel)
-        layout.addLayout(l_)
-        
-        self.setLayout(layout)
-        self.setWindowTitle("Find a client")
-        self.setWindowIcon(QIcon(QPixmap(icon_system.table)))
-
-    def search(self):
-        self.field = self.search_field.currentIndex()
-        value = self.search_value.text().strip()
-        
-        if value == "":
-            msg.message_box("No name!!", msg.message_warning)
-            return
-            
-        if self.field == _search_by_lname_kr:
-            self.result = self.db.search_by_lastname_kr(value)
-        elif self.field == _search_by_fname_kr:
-            self.result = self.db.search_by_firstname_kr(value)
-        elif self.field == _search_by_lname_en:
-            self.result = self.db.search_by_lastname_eng(value)
-        elif self.field == _search_by_fname_en:
-            self.result = self.db.search_by_firstname_eng(value)
-            
-        if self.result == []:
-            msg.message_box("No matching clients found.")
-        elif self.view: 
-            self.accept()
-        else:
-            #msg.message_box("%d clients found!"%len(self.result))
-            
-            self.client_table.setRowCount(len(self.result))
-            for row_idx, row_data in enumerate(self.result):
-                if self.field == _search_by_lname_kr or \
-                   self.field == _search_by_fname_kr:
-                    l_name = row_data[cnpdb.col_last_name_kor]
-                    f_name = row_data[cnpdb.col_first_name_kor]
-                elif self.field == _search_by_lname_en or \
-                   self.field == _search_by_fname_en:
-                    l_name = row_data[cnpdb.col_last_name_eng]
-                    f_name = row_data[cnpdb.col_first_name_eng]
-                
-                self.client_table.setItem(row_idx, 0, QTableWidgetItem(l_name)) 
-                self.client_table.setItem(row_idx, 1, QTableWidgetItem(f_name)) 
-                
-    def selected_client(self):
-        if not self.view:
-            r_ = self.client_table.currentRow()
-            if r_ >= 0:
-                return self.result[r_]
-            else:
-                return None
-            
-            
-    def get_clients(self):
-        return self.result
-
-class ClientCoordinator(QObject):
-
-    print_message = pyqtSignal(str)
-    
-    def __init__(self):
-        super(ClientCoordinator, self).__init__()
-        self.cur_client_index = 0
-        self.db = cnpdb.ClientDB()
-        self.cim = cidman.ClientID()
-        self.clients = []
-        
-    def load(self):
-        # each client data is a dictionary
-        # clients is a lift of dictionary(each client)
-        self.clients = self.db.load_all_clients()
-        if self.clients == []:
-            return False
-        id_ = [c_[cnpdb.col_id] for c_ in self.clients]
-        self.cim.clear()
-        self.cim.add_ids(id_)
-        return True
-        
-    def close(self):
-        self.db.close()
-        
-    def clear(self):
-        self.clients = []
-        self.cur_client_index = 0
-        
-    def remove_all(self):
-        deleted_clients = self.db.remove_all()
-        self.clear()
-        return deleted_clients
-        
-    def get_clients(self):
-        return self.clients
-        
-    def current_client(self):
-        if self.clients == []:
-            self.print_message.emit("... Error (ClientCoordinator::current_client). No client data exist")
-            return None
-        if self.cur_client_index >= len(self.clients):
-            self.cur_client_index = len(self.clients)-1
-        return self.clients[self.cur_client_index]
-        
-    def add_client(self, client):
-        try:
-            self.db.add_client(client)
-        except Exception as e:
-            self.print_message.emit(f"... Error (ClientCoordinator::add_client) : {e}")
-            return 
-        self.cur_client_index += 1
-        
-    def update_client(self, client):
-        c_ = client.copy()
-        self.db.update_client(client)
-        self.clients[self.cur_client_index] = c_
-        
-    def delete_client(self, id_):
-        try:
-            self.db.delete_client(id_)
-        except Exception as e:
-            self.print_message.emit(f"... Error (ClientCoordinator::delete_client) : {e}")
-            return 
-        self.cim.remove(id_)
-        
-    # In case of delete. must be called after load
-    def calculate_client_index(self, prv_client_index=-1):
-        c_len = len(self.clients)
-        
-        if prv_client_index >= 0:
-            self.cur_client_index = prv_client_index
-            
-        if self.cur_client_index < 0: 
-            self.cur_client_index = 0
-        elif self.cur_client_index > c_len:
-            self.cur_client_index = c_len-1
-        
-    def end_client(self):
-        self.cur_client_index = len(self.clients)-1
-        
-    def next_client(self):
-        nc = len(self.clients)
-        if (self.cur_client_index+1) >= nc:
-            return False
-        self.cur_client_index += 1
-        return True
-        
-    def prev_client(self):
-        if (self.cur_client_index-1) < 0:
-            return False
-        self.cur_client_index -= 1
-        return True
-    
-    def init_client_index(self):
-        self.cur_client = 0
-        
 class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
@@ -437,14 +65,16 @@ class MainWindow(QWidget):
         layout.addWidget(self.tabs)
         self.setLayout(layout)   
 
-        self.db_man = ClientCoordinator()
+        self.db_man = cnpccoord.ClientCoordinator()
         self.db_man.print_message.connect(self.print_concurrent_message)
         self.db_man.db.print_message.connect(self.print_concurrent_message)
         
         if not self.db_man.db.check():
             msg.message_box("... Error : invalid db. See messages.", msg.message_error)
         else:
+            self.global_message.appendPlainText("... Load All clients")
             self.db_man.load()
+            self.global_message.appendPlainText(f"... {self.db_man.count()} clients loaded")
             
         self.setWindowIcon(QIcon(QPixmap(icon_system.table)))
         
@@ -613,7 +243,9 @@ class MainWindow(QWidget):
         self.view_table.setColumnCount(len(self.visible_columns))
         self.view_table.setHorizontalHeaderLabels(self.visible_columns)
         self.view_table.setSortingEnabled(True)
-        self.update_view_table()
+        #self.update_view_table()
+        cnpvtbl.update_view_table(self.view_list, self.view_table, self.visible_columns)
+        
         layout.addWidget(self.view_table, 1,0,1,7)
         widget.setLayout(layout)
         return widget
@@ -631,7 +263,7 @@ class MainWindow(QWidget):
         
     def view_search_client(self):
         self.global_message.appendPlainText("... view_search_client")
-        fdlg = FindDialog(self.db_man.db, True)
+        fdlg = cnpfind.FindDialog(self.db_man.db, True)
         ret = fdlg.exec_()
         if ret == 1:
             clients = fdlg.get_clients()
@@ -640,7 +272,9 @@ class MainWindow(QWidget):
                 return
             else:
                 self.view_list = clients
-                self.update_view_table()
+                #self.update_view_table()
+                # client_list, view_table, visible_columns)
+                cnpvtbl.update_view_table(self.view_list, self.view_table, self.visible_columns)
         
     def view_saveas_excel(self):
         
@@ -683,59 +317,17 @@ class MainWindow(QWidget):
         msg.message_box(f"{len(self.view_list)} clients saved to {cnpconf.export_pdf_fname}")
         
     def change_view_setting(self):
-        self.show_customize_dialog()
-        
-    def update_view_table(self):
-        #self.global_message.appendPlainText("... update_view_table")
-        # Clear the old table
-        self.view_table.clear()
-        
-        # Set new column count and headers
-        self.view_table.setColumnCount(len(self.visible_columns))
-        self.view_table.setHorizontalHeaderLabels(self.visible_columns)
-        
-        if self.view_list is not None:
-            # Populate the table with data
-            self.view_table.setRowCount(len(self.view_list))
-            for row_idx, row_data in enumerate(self.view_list):
-                for col_idx, col_name in enumerate(self.visible_columns):
-                    key = cnpdb.available_view_column_key(col_name)
-                    value = row_data.get(key, "")
-                    self.view_table.setItem(row_idx, col_idx, QTableWidgetItem(str(value)))
-        
-        self.view_table.resizeColumnsToContents()
-        self.view_table.horizontalHeader().setStretchLastSection(True)
-
-    def show_customize_dialog(self):
-        # Create a list of currently selected columns and available columns
-        available = [col for col in self.all_columns if col not in self.visible_columns]
-        
-        dialog = CustomizeTableDlg(available, self.visible_columns, self)
-        
-        # Show the dialog and get the result
-        if dialog.exec_() == QDialog.Accepted:
-            new_visible_columns = dialog.get_selected_columns()
-            update_visible_column = False
-            v1_ = self.visible_columns
-            v2_ = new_visible_columns
-            
-            if len(v1_) <= len(v2_):
-                v1_, v2_ = v2_, v1_
-            
-            for v_ in v1_:
-                if v_ in v2_:
-                    continue
-                else:
-                    update_visible_column = True
-                    break
-                    
-            if update_visible_column:
-                cnpconf.update_visible_column(new_visible_columns, self.global_message)
-                cnpconf.save_config(self.global_message)
-                self.visible_columns = new_visible_columns   
-                self.view_list = self.get_view_client()
-   
-            self.update_view_table()
+        #self.show_customize_dialog()
+        # view_table, all_columns, visible_columns, update_visible_column, gmsg):
+        new_columns = cnpvtbl.show_customize_dialog(self.db_man.db,
+                                      self.view_list,
+                                      self.view_table, 
+                                      self.all_columns, 
+                                      self.visible_columns,
+                                      cnpconf.update_visible_column,
+                                      self.global_message)
+        if new_columns is not None:
+            self.visible_columns = new_columns
 
     def get_view_client(self):
         # create SQLite keys for search
@@ -770,7 +362,8 @@ class MainWindow(QWidget):
         if self.view_list == []: 
             return
             
-        self.update_view_table()
+        cnpvtbl.update_view_table(self.view_list, self.view_table, self.visible_columns)
+        #self.update_view_table()
         
     def set_picture_path(self, p):
         self.file_path.setText(p)
@@ -1191,7 +784,7 @@ class MainWindow(QWidget):
     
     def find_client(self):
         self.direction_button(False)
-        fdlg = FindDialog(self.db_man.db)
+        fdlg = cnpfind.FindDialog(self.db_man.db)
         ret = fdlg.exec_()
         
         if ret == 1:
